@@ -136,6 +136,8 @@ import { data, writeToFile } from './readData.js';
 		// type search box value
 		await page.type('#transactions-table_filter input.form-control', reference);
 
+		await delay(100);
+
 		// check the table body for the empty element
 		const emptyRecordElement = await page.$('td.dataTables_empty');
 
