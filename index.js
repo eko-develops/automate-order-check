@@ -59,8 +59,6 @@ import { data, writeToFile } from './readData.js';
 
 	/**
 	 * Get the first record showing
-	 * TODO
-	 * If row is not null above, can we just re-use that element?
 	 */
 	const record = await page.evaluate(
 		() => document.querySelector('#MainContent_bodyAuto tr.odd').innerText
@@ -74,8 +72,7 @@ import { data, writeToFile } from './readData.js';
 	/**
 	 * Wait for the search box to show before trying to type
 	 */
-	// await waitForVisibleSelector(page, '#transactions-table_filter');
-	await page.waitForSelector('#transactions-table_filter');
+	await waitForVisibleSelector(page, '#transactions-table_filter');
 
 	/**
 	 * Test each line within input.txt in the search box
@@ -125,21 +122,31 @@ async function authenticate(page) {
 }
 
 async function isRecordPending(page, pendingRecord) {
-	console.log('in recursive call');
 	try {
+		if (pendingRecord === undefined) {
+			await delay(5000); // wait some time before re-calling function
+
+			const updatedRecord = await page.evaluate(
+				() => document.querySelector('#MainContent_bodyAuto tr.odd').innerText
+			);
+			await isRecordPending(page, updatedRecord);
+
+			return;
+		}
+
 		if (
-			!pendingRecord?.toLowerCase().includes('pending') ||
-			pendingRecord?.toLowerCase().includes('approved')
+			!pendingRecord.toLowerCase().includes('pending') ||
+			pendingRecord.toLowerCase().includes('approved')
 		)
 			return;
-		// wait 2 seconds before getting the updated record. in this time, the record may resolve.
-		delay(2000);
+
+		await delay(5000); // wait some time before re-calling function
 
 		const updatedRecord = await page.evaluate(
 			() => document.querySelector('#MainContent_bodyAuto tr.odd').innerText
 		);
 
-		await isRecordPending(updatedRecord);
+		await isRecordPending(page, updatedRecord);
 	} catch (e) {
 		console.log('Error checking if record is pending (recursive): ', e.message);
 	}
@@ -216,7 +223,6 @@ async function chooseSelects(page) {
 }
 
 async function submitForm(page) {
-	console.log('submitting form');
 	try {
 		await page.click('#Button1');
 	} catch (e) {
