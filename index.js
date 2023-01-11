@@ -12,102 +12,124 @@ import { data, writeToFile } from './readData.js';
 
 	await page.goto(process.env.LOGIN_URL);
 
-	// handle username input
-	await page.waitForSelector('input#Account');
-	await page.type('#Account', process.env.USER, { delay: 20 });
+	/**
+	 * Handling authentication
+	 */
+	await authenticate(page);
 
-	// handle password input
-	await page.waitForSelector('input[name="Password"]');
-	await page.type('input[name="Password"]', process.env.PASS, {
-		delay: 20,
-	});
+	/**
+	 * Authenticated
+	 */
+	await waitForSelectorAndClick(page, "a[href='TransactionReport.aspx']");
 
-	await page.click("button[type='submit']");
+	await waitForVisibleSelector(page, '#tableStatusTotals');
 
-	// click on transactions report
-	await page.waitForSelector("a[href='TransactionReport.aspx']");
-	await page.click("a[href='TransactionReport.aspx']");
+	/**
+	 * Handling form
+	 */
+	await fillDateFields(page);
 
-	// wait for initial table to populate
-	await page.waitForSelector('#tableStatusTotals', { visible: true });
+	/**
+	 * Handling selects in form
+	 */
+	await chooseSelects(page);
 
-	// date obj lets us create date strings
-	const date = {
-		currentDate: new Date(),
-		toString(date = new Date()) {
-			const month = date.getMonth() + 1;
-			const day = date.getDate();
-			const year = date.getFullYear();
-			return `${month}/${day}/${year}`;
-		},
-		getPastDateToString(int) {
-			let pastDate = new Date(this.currentDate);
-			pastDate.setMonth(pastDate.getMonth() - int);
-			return this.toString(pastDate);
-		},
-	};
+	/**
+	 * Submit form
+	 */
+	await submitForm(page);
 
-	// wait for start date
-	await page.waitForSelector('#MainContent_Date1');
-
-	// set the start date as past date
-	await page.$eval(
-		'#MainContent_Date1',
-		(element, value) => (element.value = value),
-		date.getPastDateToString(3)
-	);
-
-	// wait for end date
-	await page.waitForSelector('#MainContent_Date2');
-
-	// set the end date as current date
-	await page.$eval(
-		'#MainContent_Date2',
-		(element, value) => (element.value = value),
-		date.toString()
-	);
-
-	// wait for selects
-	await page.waitForSelector('#MainContent_input_type'); // transaction type select
-	await page.waitForSelector('#inputStatusSelect'); // status select
-
-	// choosing selections
-	await page.select('#MainContent_input_type', 'D');
-	await page.select('#inputStatusSelect', '1');
-
-	await page.click('#Button1');
-
-	//wait for the response. page does not update yet when the response is resolved, but we should check anyways
-	const response = await page.waitForResponse(
-		(response) =>
-			response.url().includes(process.env.RESPONSE_URL) &&
-			response.status() === 200
-	);
+	/**
+	 * We need to wait for response to ensure we have the correct data populated
+	 */
+	await waitForResponse(page, process.env.RESPONSE_URL);
 
 	// waiting for the page to load approved in status table
 	await page.waitForFunction(
 		'document.querySelector("#tableStatusTotals tbody tr td").innerText = "Approved"'
 	);
 
-	// we need to make sure there is at least 1 row showing before we start searching
-	const row = await page.waitForSelector(
-		'#MainContent_bodyAuto tr.odd[role="row"]',
-		{
-			visible: true,
-		}
+	/**
+	 * Make sure at least 1 row is visible
+	 */
+	await waitForVisibleSelector(
+		page,
+		"#MainContent_bodyAuto tr.odd[role='row']"
 	);
 
-	if (!row) throw new Error('Could not find a record');
-
-	// get the first record that is showing
+	/**
+	 * Get the first record showing
+	 * TODO
+	 * If row is not null above, can we just re-use that element?
+	 */
 	const record = await page.evaluate(
 		() => document.querySelector('#MainContent_bodyAuto tr.odd').innerText
 	);
 
-	const isRecordPending = async (pendingRecord) => {
+	/**
+	 * Recursively check if record is pending. This is because once a response is received, there is still some time before the data is populated on the table.
+	 */
+	await isRecordPending(page, record);
+
+	/**
+	 * Wait for the search box to show before trying to type
+	 */
+	// await waitForVisibleSelector(page, '#transactions-table_filter');
+	await page.waitForSelector('#transactions-table_filter');
+
+	/**
+	 * Test each line within input.txt in the search box
+	 */
+	await typeData(page);
+
+	await browser.close();
+})();
+
+const DateBuilder = {
+	currentDate: new Date(),
+	toString(date = new Date()) {
+		const month = date.getMonth() + 1;
+		const day = date.getDate();
+		const year = date.getFullYear();
+		return `${month}/${day}/${year}`;
+	},
+	getPastDateToString(int) {
+		let pastDate = new Date(this.currentDate);
+		pastDate.setMonth(pastDate.getMonth() - int);
+		return this.toString(pastDate);
+	},
+};
+
+function delay(time) {
+	return new Promise(function (resolve) {
+		setTimeout(resolve, time);
+	});
+}
+
+async function authenticate(page) {
+	try {
+		// handle username input
+		await page.waitForSelector('input#Account');
+		await page.type('#Account', process.env.USER, { delay: 20 });
+
+		// handle password input
+		await page.waitForSelector('input[name="Password"]');
+		await page.type('input[name="Password"]', process.env.PASS, {
+			delay: 20,
+		});
+
+		await page.click("button[type='submit']");
+	} catch (e) {
+		console.log('Error authenticating: ', e.message);
+	}
+}
+
+async function isRecordPending(page, pendingRecord) {
+	console.log('in recursive call');
+	try {
 		if (
-			!pendingRecord.toLowerCase().includes('pending') ||
-			pendingRecord.toLowerCase().includes('approved')
+			!pendingRecord?.toLowerCase().includes('pending') ||
+			pendingRecord?.toLowerCase().includes('approved')
 		)
 			return;
 		// wait 2 seconds before getting the updated record. in this time, the record may resolve.
@@ -118,44 +140,131 @@ import { data, writeToFile } from './readData.js';
 		);
 
 		await isRecordPending(updatedRecord);
-	};
+	} catch (e) {
+		console.log('Error checking if record is pending (recursive): ', e.message);
+	}
+}
 
-	await isRecordPending(record);
+async function waitForSelectorAndClick(page, selector) {
+	try {
+		await page.waitForSelector(selector);
+		await page.click(selector);
+	} catch (e) {
+		console.log('Error waiting for selector and clicking: ', e.message);
+	}
+}
 
-	// make sure the search box is visible
-	await page.waitForSelector('#transactions-table_filter', { visible: true });
+async function waitForVisibleSelector(page, selector) {
+	try {
+		await page.waitForSelector(selector, { visible: true });
+	} catch (e) {
+		console.log('Error waiting for visible selector: ', e.message);
+	}
+}
 
-	// data: string[]
-	for (const reference of data) {
-		//clear the search box on every search
+async function waitForSelectorAddData(page, selector, data) {
+	try {
+		await page.waitForSelector(selector);
+		// set the start date as past date
 		await page.$eval(
-			'#transactions-table_filter input.form-control',
-			(element) => (element.value = '')
+			selector,
+			(element, value) => (element.value = value),
+			data
+		);
+	} catch (e) {
+		console.log('Wait for selector and add data error: ', e.message);
+	}
+}
+
+async function fillDateFields(page) {
+	try {
+		// start date
+		await waitForSelectorAddData(
+			page,
+			'#MainContent_Date1',
+			DateBuilder.getPastDateToString(3)
 		);
 
-		// type search box value
-		await page.type('#transactions-table_filter input.form-control', reference);
-
-		await delay(100);
-
-		// check the table body for the empty element
-		const emptyRecordElement = await page.$('td.dataTables_empty');
-
-		// if we dont find the emptyRecordElement, that means there is a record
-		if (emptyRecordElement === null) {
-			// there is a record
-			writeToFile(`${reference} - FOUND`);
-		} else {
-			// there is no record
-			writeToFile(`${reference} - NOT FOUND`);
-		}
+		// end date
+		await waitForSelectorAddData(
+			page,
+			'#MainContent_Date2',
+			DateBuilder.toString()
+		);
+	} catch (e) {
+		console.log('Error filling date fields: ', e.message);
 	}
+}
 
-	await browser.close();
-})();
+async function select(page, selector, option) {
+	try {
+		await page.waitForSelector(selector);
 
-function delay(time) {
-	return new Promise(function (resolve) {
-		setTimeout(resolve, time);
-	});
+		await page.select(selector, option);
+	} catch (e) {
+		console.log('Error selecting select: ', e.message);
+	}
+}
+
+async function chooseSelects(page) {
+	try {
+		await select(page, '#MainContent_input_type', 'D');
+		await select(page, '#inputStatusSelect', '1');
+	} catch (e) {
+		console.log('Error choosing a select: ', e.message);
+	}
+}
+
+async function submitForm(page) {
+	console.log('submitting form');
+	try {
+		await page.click('#Button1');
+	} catch (e) {
+		console.log('Error submitting form: ', e.message);
+	}
+}
+
+async function waitForResponse(page, URL) {
+	try {
+		await page.waitForResponse(
+			(response) => response.url().includes(URL) && response.status() === 200
+		);
+	} catch (e) {
+		console.log('Error waiting for response: ', e.message);
+	}
+}
+
+async function typeData(page) {
+	try {
+		// data: string[]
+		for (const reference of data) {
+			//clear the search box on every search
+			await page.$eval(
+				'#transactions-table_filter input.form-control',
+				(element) => (element.value = '')
+			);
+
+			// type search box value
+			await page.type(
+				'#transactions-table_filter input.form-control',
+				reference
+			);
+
+			await delay(100);
+
+			// check the table body for the empty element
+			const emptyRecordElement = await page.$('td.dataTables_empty');
+
+			// if we dont find the emptyRecordElement, that means there is a record
+			if (emptyRecordElement === null) {
+				// there is a record
+				writeToFile(`${reference} - FOUND`);
+			} else {
+				// there is no record
+				writeToFile(`${reference} - NOT FOUND`);
+			}
+		}
+	} catch (e) {
+		console.log('Error typing data into search field: ', e.message);
+	}
 }
