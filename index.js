@@ -104,6 +104,7 @@ function delay(time) {
 }
 
 async function authenticate(page) {
+	console.log('Authenticating...');
 	try {
 		// handle username input
 		await page.waitForSelector('input#Account');
@@ -122,6 +123,7 @@ async function authenticate(page) {
 }
 
 async function isRecordPending(page, pendingRecord) {
+	console.log(`Recursively checking pending record...`);
 	try {
 		if (pendingRecord === undefined) {
 			await delay(5000); // wait some time before re-calling function
@@ -153,6 +155,7 @@ async function isRecordPending(page, pendingRecord) {
 }
 
 async function waitForSelectorAndClick(page, selector) {
+	console.log(`Waiting for selector ${selector} to click`);
 	try {
 		await page.waitForSelector(selector);
 		await page.click(selector);
@@ -162,6 +165,7 @@ async function waitForSelectorAndClick(page, selector) {
 }
 
 async function waitForVisibleSelector(page, selector) {
+	console.log(`Waiting for visible selector ${selector}`);
 	try {
 		await page.waitForSelector(selector, { visible: true });
 	} catch (e) {
@@ -170,6 +174,7 @@ async function waitForVisibleSelector(page, selector) {
 }
 
 async function waitForSelectorAddData(page, selector, data) {
+	console.log(`Waiting for selector ${selector} to add ${data}`);
 	try {
 		await page.waitForSelector(selector);
 		// set the start date as past date
@@ -184,6 +189,7 @@ async function waitForSelectorAddData(page, selector, data) {
 }
 
 async function fillDateFields(page) {
+	console.log('Filling date fields...');
 	try {
 		// start date
 		await waitForSelectorAddData(
@@ -204,6 +210,7 @@ async function fillDateFields(page) {
 }
 
 async function select(page, selector, option) {
+	console.log(`Setting ${selector} as ${option}`);
 	try {
 		await page.waitForSelector(selector);
 
@@ -214,6 +221,7 @@ async function select(page, selector, option) {
 }
 
 async function chooseSelects(page) {
+	console.log('Choosing selects...');
 	try {
 		await select(page, '#MainContent_input_type', 'D');
 		await select(page, '#inputStatusSelect', '1');
@@ -223,6 +231,7 @@ async function chooseSelects(page) {
 }
 
 async function submitForm(page) {
+	console.log('Submitting form...');
 	try {
 		await page.click('#Button1');
 	} catch (e) {
@@ -231,6 +240,7 @@ async function submitForm(page) {
 }
 
 async function waitForResponse(page, URL) {
+	console.log(`Waiting for response from URL ${URL}...`);
 	try {
 		await page.waitForResponse(
 			(response) => response.url().includes(URL) && response.status() === 200
@@ -241,6 +251,7 @@ async function waitForResponse(page, URL) {
 }
 
 async function typeData(page) {
+	console.log('Entering data into search field...');
 	try {
 		// data: string[]
 		for (const reference of data) {
